@@ -18,12 +18,17 @@ SQLite file created inside the container at startup. Stop with `docker compose d
 
 The entrypoint prefers **`.env.prod`** and copies it over `.env` on every start. That file is
 the deployed configuration — written per competitor by Mission Control with their own
-database, `APP_KEY` and hostname — and it is **gitignored**, because it carries real
-credentials. Copy **`.env.prod.example`** to `.env.prod` and fill it in.
+database, `APP_KEY` and hostname. It ships here as a template with the credentials left
+blank; fill those in on the deployment, not in the repository.
 
 With no `.env.prod`, the container falls back to your `.env`, or to `.env.example` (SQLite)
 if you have none. The SQLite file is only created when `DB_CONNECTION=sqlite`, so setting
-another driver actually reaches that database.
+another driver actually reaches that database — the image carries both `pdo_sqlite` and
+`pdo_mysql`, so the same build serves either.
+
+Behind the ingress the app is reached over https while the container itself is spoken to
+over plain http. `bootstrap/app.php` trusts the forwarded headers, so `route()` and `url()`
+emit `https://` links and form posts are not blocked as mixed content.
 
 ## Develop
 
@@ -45,8 +50,23 @@ php artisan migrate
 php artisan serve
 ```
 
+## Front-end assets
+
+CSS and JS go through **Vite**. `@vite([...])` resolves against `public/build/manifest.json`,
+which is generated — never committed — so the Docker image builds it in a Node stage before
+the app image is assembled. `docker compose up --build` therefore needs no npm on your
+machine, and `@vite(...)` works in the container exactly as it does locally.
+
+For a hot-reloading front-end loop natively you need **Node 24.1.0** and **npm 11.5.0**:
+
+```bash
+npm install
+npm run dev     # or: npm run build
+```
+
 ## Stack
 
 - PHP 8.3 / Composer 2.9.5
 - Laravel 12.61.1
-- SQLite by default (bundled, no server); any Laravel driver via `.env.prod`
+- SQLite by default (bundled, no server); MySQL via `.env.prod` (`pdo_mysql` is built in)
+- Node 24.1.0 / npm 11.5.0, Vite 7 + Tailwind 4 (compiled during the image build)
