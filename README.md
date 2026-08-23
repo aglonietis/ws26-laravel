@@ -17,9 +17,9 @@ SQLite file created inside the container at startup. Stop with `docker compose d
 ## Configuration
 
 The entrypoint prefers **`.env.prod`** and copies it over `.env` on every start. That file is
-the deployed configuration — written per competitor by Mission Control with their own
-database, `APP_KEY` and hostname. It ships here as a template with the credentials left
-blank; fill those in on the deployment, not in the repository.
+the deployment configuration — the database, `APP_KEY` and hostname a deployed container runs
+against — and it is baked into the image. The values committed here are placeholders; replace
+them on the deployment.
 
 With no `.env.prod`, the container falls back to your `.env`, or to `.env.example` (SQLite)
 if you have none. The SQLite file is only created when `DB_CONNECTION=sqlite`, so setting
