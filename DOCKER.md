@@ -17,8 +17,8 @@ The entrypoint prefers **`.env.prod`** and copies it over `.env` on every start:
 | No `.env.prod`, no `.env` | `.env.example` is copied — SQLite, no database server |
 | No `.env.prod`, `.env` exists | Your local `.env` is left alone |
 
-`.env.prod` is written per competitor by Mission Control. It ships here as a template with
-the credentials blank — fill those in on the deployment, not in the repository.
+`.env.prod` is the deployment configuration, baked into the image. The values committed here
+are placeholders — replace them on the deployment.
 
 The SQLite file (`database/database.sqlite`) is created only when `DB_CONNECTION=sqlite`, so
 pointing the app at MySQL actually reaches MySQL: the image builds `pdo_mysql` alongside
