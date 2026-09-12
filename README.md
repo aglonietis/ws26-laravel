@@ -1,30 +1,81 @@
 # Laravel 12.61.1 — WSC2026
 
-A real **Laravel 12.61.1** application (WorldSkills 2026 Web Technologies, TP17) backed by a
-self-contained **SQLite** database by default — no database server required. On start it
-creates the SQLite file, runs migrations, then serves. A deployed instance can point at a
-real database instead; see **Configuration** below.
+A real **Laravel 12.61.1** application (WorldSkills 2026 Web Technologies, TP17) backed by
+**MySQL** — the same engine the deployed app uses, so what works locally works there. On
+start it applies migrations, then serves.
 
 ## Run it
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
 
-Then open **http://localhost**. By default there is no database service: the app uses a
-SQLite file created inside the container at startup. Stop with `docker compose down`.
+Then open **http://localhost**. `docker compose` starts a MySQL server alongside the app,
+using the credentials from your `.env`. Stop with `docker compose down`.
+
+Confirm the database is reachable:
+
+```bash
+curl -fsS http://localhost/api/db-check
+```
+
+```json
+{ "ok": true, "driver": "mysql", "host": "db", "port": 3306, "database": "app",
+  "user": "app", "server_version": "8.4.11", "latency_ms": 1,
+  "migrations": "table present" }
+```
+
+It returns **503** when the connection fails, naming the host, database and user it tried
+and the driver's SQLSTATE — `1045` for a wrong password, `2002` for an unreachable host.
+The password is never in the response. Every WSC2026 template answers the same check, so
+one command works whatever stack you chose.
+
+### API routes
+
+`routes/api.php` holds the JSON routes, registered in `bootstrap/app.php` and prefixed with
+`/api`. It needs **no package**: Laravel's `api` middleware group is just `SubstituteBindings`
+— no session, no CSRF, no cookies — so the routes are stateless out of the box.
+
+`/api/db-check` lives there rather than in `routes/web.php` deliberately: `SESSION_DRIVER` is
+`database`, so a web route would query the sessions table before running and answer a bare 500
+when the database is down — precisely when the reason matters. The `api` group cannot have that
+problem.
+
+If a project needs **token authentication**, run `php artisan install:api`. That installs
+Laravel Sanctum, publishes its config and migration, and rewrites `routes/api.php` — so add it
+when you need it rather than shipping it to everyone.
 
 ## Configuration
 
-The entrypoint prefers **`.env.prod`** and copies it over `.env` on every start. That file is
-the deployment configuration — the database, `APP_KEY` and hostname a deployed container runs
-against — and it is baked into the image. The values committed here are placeholders; replace
-them on the deployment.
+The database connection lives in two files and **nowhere else** — not in the code, the
+`Dockerfile` or `docker-compose.yml`:
 
-With no `.env.prod`, the container falls back to your `.env`, or to `.env.example` (SQLite)
-if you have none. The SQLite file is only created when `DB_CONNECTION=sqlite`, so setting
-another driver actually reaches that database — the image carries both `pdo_sqlite` and
-`pdo_mysql`, so the same build serves either.
+| File | Used for | In git? |
+|------|----------|---------|
+| `.env` | your local development database | No — gitignored |
+| `.env.prod` | the deployed app; the platform fills in your credentials | Yes |
+
+The entrypoint prefers **`.env.prod`** and copies it over `.env` on every start, so a
+deployed container always runs the deployed configuration. With no `.env.prod` it falls back
+to your `.env`, or to `.env.example` if you have none.
+
+`docker compose` reads the same `.env` to start the local MySQL server *and* to configure
+PHP, so the app and the database cannot drift apart.
+
+### Injected environment variables
+
+`php artisan serve` does **not** pass the container's environment to the processes that
+handle requests — it forwards a short whitelist and nothing else. A `DB_HOST` set by
+docker-compose or Kubernetes would therefore reach `artisan migrate` but not the running
+app, which would quietly fall back to `.env`: migrations succeed against the right database
+while every page reports "Connection refused" for another one.
+
+`docker/sync-env.php`, run by the entrypoint, writes any injected `APP_*`/`DB_*` variables
+into `.env` so both halves agree. Injected values win over the file.
+
+The image carries both `pdo_mysql` and `pdo_sqlite`, so pointing `DB_CONNECTION` at either
+engine works without a rebuild.
 
 Behind the ingress the app is reached over https while the container itself is spoken to
 over plain http. `bootstrap/app.php` trusts the forwarded headers, so `route()` and `url()`
@@ -40,12 +91,12 @@ docker compose up --build
 
 Edit **routes/web.php and resources/views/** to change routes, controllers and views.
 
-To run it natively instead you need **PHP 8.3** (with `pdo_sqlite`) and **Composer 2.9.5**.
-Then:
+To run it natively instead you need **PHP 8.3** (with `pdo_mysql`), **Composer 2.9.5** and a
+MySQL server of your own. Then:
 
 ```bash
+cp .env.example .env    # point DB_HOST at your server (127.0.0.1 for a local one)
 composer install
-touch database/database.sqlite
 php artisan migrate
 php artisan serve
 ```
@@ -68,5 +119,5 @@ npm run dev     # or: npm run build
 
 - PHP 8.3 / Composer 2.9.5
 - Laravel 12.61.1
-- SQLite by default (bundled, no server); MySQL via `.env.prod` (`pdo_mysql` is built in)
+- MySQL 8.4 (started by `docker compose`); `pdo_sqlite` also built in
 - Node 24.1.0 / npm 11.5.0, Vite 7 + Tailwind 4 (compiled during the image build)

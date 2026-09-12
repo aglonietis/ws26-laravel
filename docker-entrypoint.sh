@@ -16,6 +16,11 @@ elif [ ! -f .env ]; then
   cp .env.example .env
 fi
 
+# See the script for why this is needed: `artisan serve` does not pass the
+# container's environment to the processes that serve requests, so injected
+# values have to be written into .env or the running app never sees them.
+php docker/sync-env.php
+
 # Only sqlite needs its file created before migrating, and only when sqlite is
 # genuinely the driver. This block used to rewrite DB_CONNECTION to sqlite
 # unconditionally, "regardless of what .env shipped with", which made a database
@@ -25,15 +30,14 @@ if grep -q '^DB_CONNECTION=sqlite' .env; then
   [ -f database/database.sqlite ] || touch database/database.sqlite
 fi
 
-# Use an injected APP_KEY if provided, otherwise generate one when .env has none.
-if [ -n "${APP_KEY:-}" ]; then
-  sed -i "s#^APP_KEY=.*#APP_KEY=${APP_KEY}#" .env
-elif ! grep -q '^APP_KEY=.\+' .env; then
+# Generate an APP_KEY when neither the environment nor .env supplied one.
+if ! grep -q '^APP_KEY=.\+' .env; then
   php artisan key:generate --force --no-interaction || true
 fi
 
 # Never fatal: a database that is unreachable for a moment should leave the app
-# serving its error page rather than crash-looping the pod.
+# serving its error page — and /api/db-check reporting exactly why — rather than
+# crash-looping the pod.
 php artisan migrate --force --no-interaction || true
 
 exec php artisan serve --host 0.0.0.0 --port 80
